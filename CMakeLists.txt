@@ -1,10 +1,5 @@
 cmake_minimum_required(VERSION 3.12.1 FATAL_ERROR)
 
-# There is a problem with clang using the default gcc headers on Ubuntu (remove #error).
-if(NOT WIN32)
-  add_definitions(-D__STDC__)
-endif()
-
 set(CMAKE_CONFIGURATION_TYPES Debug RelWithDebInfo Release MinSizeRel)
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG")
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT WelderEditor)
@@ -45,11 +40,13 @@ set(WELDER_PLATFORM_DATA_DIR ${WELDER_CORE_DIR}/PlatformData/${WELDER_TOOLCHAIN}
 set(WELDER_VIRTUAL_FILE_SYSTEM_ZIP ${CMAKE_BINARY_DIR}/FileSystem.zip)
 
 add_custom_target(VirtualFileSystemZip
-  #COMMAND ${CMAKE_COMMAND} -E tar "cfv" "${WELDER_VIRTUAL_FILE_SYSTEM_ZIP}" --format=zip
+  COMMAND ${CMAKE_COMMAND} -E remove ${WELDER_VIRTUAL_FILE_SYSTEM_ZIP}
   COMMAND 7z a -tzip -mx=9 -mfb=128 -mpass=10 ${WELDER_VIRTUAL_FILE_SYSTEM_ZIP}
     "Resources"
     "Data"
+    "Build/PrebuiltContent/ZeroVersion${WELDER_REVISION}-${WELDER_CHANGESET}"
     ".welder"
+  #COMMAND ${CMAKE_COMMAND} -E tar "cfv" "${WELDER_VIRTUAL_FILE_SYSTEM_ZIP}" --format=zip
   WORKING_DIRECTORY ${WELDER_CORE_DIR}
 )
 

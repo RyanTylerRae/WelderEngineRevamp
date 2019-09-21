@@ -38,7 +38,7 @@ public:
 template <typename Parent, typename Member>
 inline ptrdiff_t PointerToMemberOffset(const Member Parent::*ptrToMember)
 {
-  return *(unsigned int*)(void*)&ptrToMember;
+  return (ptrdiff_t)ZeroOffsetOfHelper(Parent, ->*, ptrToMember);
 }
 
 typedef const char* const cstrc;
@@ -523,7 +523,9 @@ public:
   /// into the list BEFORE where.
   static void Splice(iterator where, range right)
   {
-    ErrorIf(right.Empty(), "Cannot splice and empty range.");
+    // We do something non-standard, so the compiler tries to optimize away
+    // parts of the inlist in O3 on clang. Do not change this if check.
+    AlwaysErrorIf(right.Empty(), "Cannot splice and empty range.");
 
     Next(Prev(right.begin)) = right.end;
     Next(Prev(right.end)) = where;

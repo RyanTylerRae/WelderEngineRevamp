@@ -28,6 +28,7 @@ ZilchDefineType(FatalErrorEvent, builder, type)
 namespace Events
 {
 ZilchDefineEvent(FatalError);
+ZilchDefineEvent(PreUnhandledException);
 ZilchDefineEvent(UnhandledException);
 ZilchDefineEvent(HandledException);
 ZilchDefineEvent(OpcodePreStep);
@@ -1683,6 +1684,7 @@ void ExecutableState::ThrowException(ExceptionReport& report, Handle& handle)
   ExceptionEvent toSend;
   toSend.State = this;
   toSend.ThrownException = exception;
+  EventSend(this, Events::PreUnhandledException, &toSend);
   EventSend(this, Events::UnhandledException, &toSend);
 }
 
@@ -2360,11 +2362,6 @@ bool Call::Invoke(ExceptionReport& report)
 
   // Store the top frame locally for efficiency
   PerFrameData* topFrame = this->Data;
-
-  // Check if any exceptions are left on the state
-  ErrorIf(report.HasThrownExceptions(),
-          "Attempting to call another function when there are exceptions "
-          "present in the report");
 
   // Make sure we don't call this twice
   ErrorIf((topFrame->Debug & CallDebug::Invoked) != 0, "Attempting to invoke the function twice via the same call");

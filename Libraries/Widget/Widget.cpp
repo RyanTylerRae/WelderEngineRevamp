@@ -3,6 +3,7 @@
 
 namespace Zero
 {
+//#define WIDGET_DEBUGGING
 
 ZilchDefineType(SizePolicies, builder, type)
 {
@@ -19,6 +20,7 @@ void WidgetHandleManager::ObjectToHandle(const byte* object, BoundType* type, Ha
     return;
 
   Widget* instance = (Widget*)object;
+  instance->DebugValidate();
   handleToInitialize.HandleU64 = instance->mId;
 }
 
@@ -31,7 +33,10 @@ void WidgetHandleManager::Delete(const Handle& handle)
 {
   Widget* widget = handle.Get<Widget*>();
   if (widget)
+  {
+    widget->DebugValidate();
     widget->Destroy();
+  }
 }
 
 bool WidgetHandleManager::CanDelete(const Handle& handle)
@@ -49,8 +54,29 @@ u64 WidgetHandleManager::HandleToId(const Handle& handle)
   return handle.HandleU64;
 }
 
+HashSet<const Widget*> gValidWidgets;
+HashSet<const Widget*> gValidWidgetsAllTime;
+
+static Array<String> gWidgetStack;
+void WidgetBreak(const char* message, const Widget* widget)
+{
+  forRange (String& str, gWidgetStack)
+  {
+    printf("STACK: %s\n", str.c_str());
+  }
+  Error("%s %p\n", message, widget);
+  printf("%s %p\n", message, widget);
+  fflush(stdout);
+  ZeroDebugBreak();
+}
+bool Widget::sDisableDeletes = false;
+
 Widget::Widget(Composite* parent, AttachType::Enum attachType)
 {
+#ifdef WIDGET_DEBUGGING
+  gValidWidgets.InsertOrError(this);
+  gValidWidgetsAllTime.Insert(this);
+#endif
   mId = ++Z::gWidgetManager->IdCounter;
   Z::gWidgetManager->Widgets.Insert(mId, this);
 
@@ -67,6 +93,7 @@ Widget::Widget(Composite* parent, AttachType::Enum attachType)
     mDefSet = DefinitionSetManager::GetInstance()->Main;
     mRootWidget = (RootWidget*)this;
   }
+  DebugValidate();
 }
 
 void Widget::ClearValues()
@@ -101,6 +128,7 @@ void Widget::ClearValues()
 
 Widget::~Widget()
 {
+  DebugValidate();
   SafeDelete(mDocker);
   SafeRelease(mActions);
 
@@ -113,9 +141,21 @@ Widget::~Widget()
     mParent->mChildren.Erase(this);
     mParent = nullptr;
   }
+
+#ifdef WIDGET_DEBUGGING
+  if (!gValidWidgets.Erase(this))
+  {
+    WidgetBreak("Did not find widget, double delete? %p\n", this);
+  }
+#endif
+
+  if (sDisableDeletes)
+  {
+    WidgetBreak("Widget deletes disabled %p\n", this);
+  }
 }
 
-String Widget::GetDebugName()
+String Widget::GetDebugName() const
 {
   if (!mName.Empty())
     return mName;
@@ -125,6 +165,7 @@ String Widget::GetDebugName()
 
 void Widget::InternalDestroy()
 {
+  DebugValidate();
   if (!mDestroyed)
   {
     mDestroyed = true;
@@ -140,6 +181,7 @@ void Widget::InternalDestroy()
 
 void Widget::OnDestroy()
 {
+  DebugValidate();
 }
 
 void Widget::Destroy()
@@ -154,21 +196,25 @@ void Widget::Destroy()
 
 void Widget::SetName(StringParam name)
 {
+  DebugValidate();
   mName = name;
 }
 
 String Widget::GetName()
 {
+  DebugValidate();
   return mName;
 }
 
 bool Widget::InputBlocked()
 {
+  DebugValidate();
   return !mInteractive || !mActive || !mVisible || mDestroyed;
 }
 
 bool Widget::CheckClipping(Vec2Param screenPoint)
 {
+  DebugValidate();
   if (mClipping)
   {
     WidgetRect rect = GetLocalRect();
@@ -182,6 +228,7 @@ bool Widget::CheckClipping(Vec2Param screenPoint)
 
 Widget* Widget::HitTest(Vec2 screenPoint, Widget* ignore)
 {
+  DebugValidate();
   // Skip inactive object
   if (InputBlocked())
     return nullptr;
@@ -201,17 +248,20 @@ Widget* Widget::HitTest(Vec2 screenPoint, Widget* ignore)
 
 RootWidget* Widget::GetRootWidget()
 {
+  DebugValidate();
   return mRootWidget;
 }
 
 void Widget::SetDocker(Docker* docker)
 {
+  DebugValidate();
   SafeDelete(mDocker);
   mDocker = docker;
 }
 
 void Widget::DispatchBubble(StringParam eventId, Event* event)
 {
+  DebugValidate();
   GetDispatcher()->Dispatch(eventId, event);
   if (mParent)
     mParent->DispatchBubble(eventId, event);
@@ -219,6 +269,7 @@ void Widget::DispatchBubble(StringParam eventId, Event* event)
 
 Actions* Widget::GetActions()
 {
+  DebugValidate();
   if (mActions == nullptr)
   {
     mActions = new Actions(Z::gWidgetManager->mWidgetActionSpace);
@@ -229,16 +280,19 @@ Actions* Widget::GetActions()
 
 bool Widget::HasFocus()
 {
+  DebugValidate();
   return mFlags.IsSet(DisplayFlags::FocusHierarchy);
 }
 
 bool Widget::IsMouseOver()
 {
+  DebugValidate();
   return mFlags.IsSet(DisplayFlags::MouseOverHierarchy);
 }
 
 void Widget::SetColor(Vec4Param color)
 {
+  DebugValidate();
   if (color == mColor)
     return;
   mColor = color;
@@ -247,12 +301,14 @@ void Widget::SetColor(Vec4Param color)
 
 void Widget::SetSize(Vec2 newSize)
 {
+  DebugValidate();
   mSize = SnapToPixels(newSize);
   MarkAsNeedsUpdate();
 }
 
 void Widget::SetSizing(SizeAxis::Enum axis, SizePolicy::Enum policy, float size)
 {
+  DebugValidate();
   mSizePolicy.Policy[axis] = policy;
   mSizePolicy.Size[axis] = size;
   if (policy == SizePolicy::Fixed)
@@ -261,23 +317,27 @@ void Widget::SetSizing(SizeAxis::Enum axis, SizePolicy::Enum policy, float size)
 
 void Widget::SetSizing(SizePolicy::Enum policy, Vec2Param size)
 {
+  DebugValidate();
   SetSizing(SizeAxis::X, policy, size.x);
   SetSizing(SizeAxis::Y, policy, size.y);
 }
 
 void Widget::SetSizing(SizePolicy::Enum policy, float size)
 {
+  DebugValidate();
   SetSizing(policy, Vec2(size));
 }
 
 void Widget::SetTranslation(Vec3 newTranslation)
 {
+  DebugValidate();
   mTranslation = SnapToPixels(newTranslation);
   MarkAsNeedsUpdate();
 }
 
 size_t Widget::GetDepth()
 {
+  DebugValidate();
   size_t depth = 0;
   Widget* it = this;
   while ((it = it->GetParent()))
@@ -287,6 +347,7 @@ size_t Widget::GetDepth()
 
 void Widget::SetTranslationAndSize(Vec3 newTranslation, Vec2 newSize)
 {
+  DebugValidate();
   mSize = SnapToPixels(newSize);
   mTranslation = SnapToPixels(newTranslation);
   MarkAsNeedsUpdate();
@@ -294,6 +355,7 @@ void Widget::SetTranslationAndSize(Vec3 newTranslation, Vec2 newSize)
 
 void Widget::NeedsRedraw()
 {
+  DebugValidate();
   mNeedsRedraw = true;
   if (mParent)
     mParent->NeedsRedraw();
@@ -301,6 +363,7 @@ void Widget::NeedsRedraw()
 
 void Widget::MarkAsNeedsUpdate(bool local)
 {
+  DebugValidate();
   mNeedsRedraw = true;
 
   if (mTransformUpdateState == TransformUpdateState::Updated)
@@ -321,6 +384,7 @@ void Widget::MarkAsNeedsUpdate(bool local)
 
 bool Widget::IsAncestorOf(Widget* child)
 {
+  DebugValidate();
   Widget* current = child;
   while (current)
   {
@@ -333,6 +397,7 @@ bool Widget::IsAncestorOf(Widget* child)
 
 void Widget::MoveToFront()
 {
+  DebugValidate();
   Composite* parent = mParent;
   parent->mChildren.Erase(this);
   parent->mChildren.PushBack(this);
@@ -340,6 +405,7 @@ void Widget::MoveToFront()
 
 void Widget::MoveToBack()
 {
+  DebugValidate();
   Composite* parent = mParent;
   parent->mChildren.Erase(this);
   parent->mChildren.PushFront(this);
@@ -347,6 +413,7 @@ void Widget::MoveToBack()
 
 Vec2 Widget::ToLocal(Vec2Param screenPoint)
 {
+  DebugValidate();
   Mat4 toLocal = Invert2D(mWorldTx);
   Vec3 localPoint = TransformPointCol(toLocal, Vec3(screenPoint.x, screenPoint.y, 0.0f));
   return Vec2(localPoint.x, localPoint.y);
@@ -354,12 +421,14 @@ Vec2 Widget::ToLocal(Vec2Param screenPoint)
 
 Vec3 Widget::ToLocal(Vec3Param screenPoint)
 {
+  DebugValidate();
   Mat4 toLocal = Invert2D(mWorldTx);
   return TransformPointCol(toLocal, screenPoint);
 }
 
 Vec2 Widget::ToScreen(Vec2Param localPoint)
 {
+  DebugValidate();
   Vec3 screenPoint = Math::ToVector3(localPoint, 0.0f);
   screenPoint = TransformPointCol(mWorldTx, screenPoint);
   return Vec2(screenPoint.x, screenPoint.y);
@@ -367,6 +436,7 @@ Vec2 Widget::ToScreen(Vec2Param localPoint)
 
 Vec3 Widget::GetScreenPosition() const
 {
+  DebugValidate();
   if (mParent)
     return mTranslation + mParent->GetScreenPosition();
   return mTranslation;
@@ -374,6 +444,7 @@ Vec3 Widget::GetScreenPosition() const
 
 WidgetRect Widget::GetRectInParent()
 {
+  DebugValidate();
   WidgetRect local = GetLocalRect();
   local.X = mTranslation.x;
   local.Y = mTranslation.y;
@@ -382,6 +453,7 @@ WidgetRect Widget::GetRectInParent()
 
 WidgetRect Widget::GetLocalRect() const
 {
+  DebugValidate();
   if (mOrigin == DisplayOrigin::Center)
     return WidgetRect::PointAndSize(mSize * 0.5f, mSize);
   else
@@ -390,6 +462,7 @@ WidgetRect Widget::GetLocalRect() const
 
 WidgetRect Widget::GetScreenRect() const
 {
+  DebugValidate();
   Vec3 screenPos = GetScreenPosition();
   WidgetRect rect = GetLocalRect();
   rect.X += screenPos.x;
@@ -399,12 +472,14 @@ WidgetRect Widget::GetScreenRect() const
 
 Vec2 Widget::GetClientCenterPosition() const
 {
+  DebugValidate();
   WidgetRect clientRect = GetScreenRect();
   return Vec2(clientRect.X + clientRect.SizeX / 2.0f, clientRect.Y + clientRect.SizeY / 2.0f);
 }
 
 bool Widget::Contains(Vec2 screenPoint)
 {
+  DebugValidate();
   WidgetRect localRect = GetLocalRect();
   Vec2 localMousePos = this->ToLocal(screenPoint);
   return localRect.Contains(localMousePos);
@@ -412,43 +487,110 @@ bool Widget::Contains(Vec2 screenPoint)
 
 bool Widget::TryTakeFocus()
 {
+  DebugValidate();
   return this->TakeFocusOverride();
+}
+
+void Widget::DebugValidate() const
+{
+#ifdef WIDGET_DEBUGGING
+  if ((void*)this == nullptr || this->mId > INT_MAX)
+  {
+    WidgetBreak("Widget was null or had an invalid id", this);
+  }
+
+  if (!gValidWidgets.Contains(this))
+  {
+    if (gValidWidgetsAllTime.Contains(this))
+    {
+      WidgetBreak("Invalid widget (but it was valid at one point in time)", this);
+    }
+    else
+    {
+      WidgetBreak("Invalid widget", this);
+    }
+  }
+
+  static HashSet<void*> vtables;
+
+  void* vtable = *(void**)this;
+  if (!vtables.Contains(vtable))
+  {
+    vtables.Insert(vtable);
+    printf("New vtable: %p\n", vtable);
+    fflush(stdout);
+  }
+
+  gWidgetStack.PushBack(GetDebugName());
+  Composite* composite = const_cast<Widget*>(this)->GetSelfAsComposite();
+  if (composite)
+  {
+    WidgetListRange children = composite->GetChildren();
+    while (!children.Empty())
+    {
+      Widget& child = children.Front();
+      child.DebugValidate();
+      children.PopFront();
+    }
+  }
+  gWidgetStack.PopBack();
+
+  // Access all the widget memory
+  static byte sMemory[sizeof(Widget)];
+  memcpy(sMemory, (void*)this, sizeof(Widget));
+
+  if (!mDestroyed)
+  {
+    Widget* widget = Z::gWidgetManager->Widgets.FindValue(this->mId, nullptr);
+    if (widget == nullptr || widget != this || widget->mId != this->mId)
+    {
+      WidgetBreak("Widget was not found in the widget manager", this);
+    }
+  }
+#endif
 }
 
 void Widget::TakeFocus()
 {
+  DebugValidate();
   bool focusTaken = this->TakeFocusOverride();
   ErrorIf(!focusTaken, "The widget can not take focus.");
 }
 
 void Widget::SoftTakeFocus()
 {
+  DebugValidate();
   GetRootWidget()->RootSoftTakeFocus(this);
 }
 
 void Widget::HardTakeFocus()
 {
+  DebugValidate();
   GetRootWidget()->RootChangeFocus(this, FocusMode::Hard);
 }
 
 bool Widget::TakeFocusOverride()
 {
+  DebugValidate();
   // By default do not take focus
   return false;
 }
 
 void Widget::LoseFocus()
 {
+  DebugValidate();
   GetRootWidget()->RootRemoveFocus(this);
   MarkAsNeedsUpdate(true);
 }
 
 void Widget::ChangeDefinition(BaseDefinition* def)
 {
+  DebugValidate();
 }
 
 void Widget::CaptureMouse()
 {
+  DebugValidate();
   GetRootWidget()->RootCaptureMouse(this);
 }
 
@@ -459,22 +601,26 @@ void Widget::ReleaseMouseCapture()
 
 void Widget::SetRotation(float angle)
 {
+  DebugValidate();
   mAngle = angle;
 }
 
 float Widget::GetRotation()
 {
+  DebugValidate();
   return mAngle;
 }
 
 void Widget::ScreenCaptureBackBuffer(Image& image)
 {
+  DebugValidate();
   WidgetRect rect = GetLocalRect();
   ScreenCaptureBackBuffer(image, rect);
 }
 
 void Widget::ScreenCaptureBackBuffer(Image& image, WidgetRect& subRect)
 {
+  DebugValidate();
   // GraphicsViewport viewport = GenerateSubViewport(mWorldTx,
   // subRect.TopLeft(), subRect.Size());
 
@@ -485,16 +631,19 @@ void Widget::ScreenCaptureBackBuffer(Image& image, WidgetRect& subRect)
 
 void Widget::SetTakeFocusMode(FocusMode::Type focusMode)
 {
+  DebugValidate();
   mTakeFocusMode = focusMode;
 }
 
 void Widget::SetClipping(bool clipping)
 {
+  DebugValidate();
   mClipping = clipping;
 }
 
 void Widget::DispatchAt(DispatchAtParams& params)
 {
+  DebugValidate();
   Widget* hit = this->HitTest(params.Position, params.Ignore);
   if (!hit)
     return;
@@ -508,6 +657,7 @@ void Widget::DispatchAt(DispatchAtParams& params)
 
 bool Widget::GetClipping()
 {
+  DebugValidate();
   return mClipping;
 }
 
@@ -536,6 +686,7 @@ bool GetZIndexDepthFirst(Widget* widget, Widget* target, int* zindex)
 
 int Widget::GetZIndex()
 {
+  DebugValidate();
   // This is a potentially expensive function to call because it walks
   // all widgets until we find our own widget (from the root).
   int zindex = 0;
@@ -545,12 +696,14 @@ int Widget::GetZIndex()
 
 void Widget::BuildLocalMatrix(Mat4& output)
 {
+  DebugValidate();
   Build2dTransform(output, this->mTranslation, this->mAngle);
 }
 
 void Widget::RenderUpdate(
     ViewBlock& viewBlock, FrameBlock& frameBlock, Mat4Param parentTx, ColorTransform colorTx, WidgetRect clipRect)
 {
+  DebugValidate();
   Mat4 localTx;
   BuildLocalMatrix(localTx);
   mWorldTx = localTx * parentTx;
@@ -558,6 +711,7 @@ void Widget::RenderUpdate(
 
 ViewNode& Widget::AddRenderNodes(ViewBlock& viewBlock, FrameBlock& frameBlock, WidgetRect clipRect, Texture* texture)
 {
+  DebugValidate();
   FrameNode& frameNode = frameBlock.mFrameNodes.PushBack();
   ViewNode& viewNode = viewBlock.mViewNodes.PushBack();
 
@@ -600,6 +754,7 @@ void Widget::CreateRenderData(ViewBlock& viewBlock,
                               Array<StreamedVertex>& vertices,
                               PrimitiveType::Enum primitiveType)
 {
+  DebugValidate();
   if (vertices.Empty())
     return;
 
@@ -621,6 +776,7 @@ void Widget::CreateRenderData(ViewBlock& viewBlock,
 
 void Widget::SizeToContents()
 {
+  DebugValidate();
   SetSize(GetMinSize());
 }
 
@@ -636,18 +792,21 @@ void Widget::UpdateTransformExternal()
 
 void Widget::UpdateTransform()
 {
+  DebugValidate();
   // Clear the update flag
   mTransformUpdateState = TransformUpdateState::Updated;
 }
 
 void Widget::SetDockMode(DockMode::Enum dockMode)
 {
+  DebugValidate();
   mCurDockMode = dockMode;
   mParent->MarkAsNeedsUpdate();
 }
 
 void Widget::SetDockArea(DockArea::Enum dockArea)
 {
+  DebugValidate();
   if (mDocker)
     mDocker->Dock(this, dockArea);
   if (dockArea == DockArea::Floating)
@@ -658,11 +817,13 @@ void Widget::SetDockArea(DockArea::Enum dockArea)
 
 bool Widget::GetActive()
 {
+  DebugValidate();
   return mActive;
 }
 
 bool Widget::GetGlobalActive()
 {
+  DebugValidate();
   Widget* current = this;
   while (current)
   {
@@ -676,6 +837,7 @@ bool Widget::GetGlobalActive()
 
 void Widget::SetActive(bool active)
 {
+  DebugValidate();
   if (mActive != active)
   {
     mActive = active;
@@ -696,16 +858,19 @@ void Widget::SetActive(bool active)
 
 void Widget::SetInteractive(bool interactive)
 {
+  DebugValidate();
   mInteractive = interactive;
 }
 
 Vec2 Widget::GetMinSize()
 {
+  DebugValidate();
   return Pixels(100, 100);
 }
 
 Vec2 Widget::Measure(LayoutArea& data)
 {
+  DebugValidate();
   Vec2 measureSize = GetMinSize();
   if (mSizePolicy.XPolicy == SizePolicy::Fixed)
     measureSize.x = mSize.x;
@@ -716,6 +881,7 @@ Vec2 Widget::Measure(LayoutArea& data)
 
 Element* Widget::CreateAttachedGeneric(StringParam name)
 {
+  DebugValidate();
   Composite* thisComposite = this->GetSelfAsComposite();
   ImageWidget* w = new ImageWidget(thisComposite, name, AttachType::Direct);
   w->SetNotInLayout(true);
@@ -724,6 +890,7 @@ Element* Widget::CreateAttachedGeneric(StringParam name)
 
 Thickness Widget::GetBorderThickness()
 {
+  DebugValidate();
   return Thickness::cZero;
 }
 

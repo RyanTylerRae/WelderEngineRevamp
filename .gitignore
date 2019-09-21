@@ -31,7 +31,6 @@ syntax: glob
 compile_commands.json
 
 Temp/
-Cache/
 Build/
 node_modules/
 enc_temp_folder/

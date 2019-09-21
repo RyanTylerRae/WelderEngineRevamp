@@ -70,6 +70,10 @@ void ZeroStartup::MainLoop()
     // Handles changing to the next phase internally.
     ProcessJobs();
     break;
+  case StartupPhase::JobsComplete:
+    JobsComplete();
+    NextPhase();
+    break;
   case StartupPhase::UserCreation:
     UserCreation();
     NextPhase();
@@ -89,6 +93,7 @@ void ZeroStartup::MainLoop()
 
   if (mExit)
   {
+    ZPrint("Stopping main loop");
     StopMainLoop();
     delete this;
   }
@@ -260,7 +265,8 @@ void ZeroStartup::Startup()
   OsShell* osShell = engine->has(OsShell);
 
   IntVec2 size = mWindowSize;
-  if (mWindowSize == IntVec2::cZero) {
+  if (mWindowSize == IntVec2::cZero)
+  {
     size = osShell->GetPrimaryMonitorSize();
   }
   WindowState::Enum state = mWindowState;
@@ -324,8 +330,24 @@ void ZeroStartup::Startup()
 
 void ZeroStartup::ProcessJobs()
 {
-  // TODO(Trevor.Sundberg): Iterative job processing or event wait on all jobs complete.
-  NextPhase();
+  Z::gJobs->RunJobsTimeSliced();
+
+  if (Z::gJobs->AreAllJobsCompleted())
+  {
+    NextPhase();
+  }
+  else if (ThreadingEnabled)
+  {
+    // This should be a proper wait, not a spin wait with a sleep...
+    Os::Sleep(10);
+  }
+
+  Z::gDispatch->DispatchEvents();
+}
+
+void ZeroStartup::JobsComplete()
+{
+  Z::gResources->SetupDefaults();
 }
 
 void ZeroStartup::EngineUpdate()
@@ -422,7 +444,9 @@ void ZeroStartup::Shutdown()
 
 void ZeroStartup::NextPhase()
 {
+  ZPrint("Completed phase: %s\n", StartupPhase::Names[mPhase]);
   mPhase = (StartupPhase::Enum)(mPhase + 1);
+  ZPrint("Next phase: %s\n", StartupPhase::Names[mPhase]);
 }
 
 } // namespace Zero

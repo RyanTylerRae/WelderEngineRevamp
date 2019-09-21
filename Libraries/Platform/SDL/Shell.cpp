@@ -192,7 +192,7 @@ IntRect Shell::GetPrimaryMonitorRectangle()
     displayIndex = SDL_GetWindowDisplayIndex((SDL_Window*)mMainWindow->mHandle);
 
   SDL_Rect monitorRectangle;
-  if (SDL_GetDisplayUsableBounds(displayIndex, &monitorRectangle) == 0) 
+  if (SDL_GetDisplayUsableBounds(displayIndex, &monitorRectangle) == 0)
     return IntRect(monitorRectangle.x, monitorRectangle.y, monitorRectangle.w, monitorRectangle.h);
 
   // Return a default monitor size since we failed.
@@ -761,7 +761,7 @@ ShellWindow::ShellWindow(Shell* shell,
 
   if (!(flags & WindowStyleFlags::OnTaskBar))
     sdlFlags |= SDL_WINDOW_SKIP_TASKBAR;
-  
+
   switch (state)
   {
   case WindowState::Minimized:
@@ -1068,6 +1068,15 @@ void ShellWindow::SetProgress(ProgressType::Enum progressType, float progress)
 void ShellWindow::PlatformSpecificFixup()
 {
   // SDL doesn't need anything special here.
+}
+
+bool ShellWindow::HasOwnMinMaxExitButtons()
+{
+#if defined(WelderTargetOsEmscripten)
+  return true;
+#else
+  return !mStyle.IsSet(WindowStyleFlags::ClientOnly);
+#endif
 }
 
 } // namespace Zero
